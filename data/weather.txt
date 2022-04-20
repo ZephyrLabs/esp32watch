@@ -1,0 +1,4 @@
+country code
+location code
+api key
+
