@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <FreeRTOS.h>
 #include <TFT_eSPI.h>
 #include "screen_service.h"
 #include "bmp.h"
