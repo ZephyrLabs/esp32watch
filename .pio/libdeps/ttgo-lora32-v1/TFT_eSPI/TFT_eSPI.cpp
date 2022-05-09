@@ -99,11 +99,11 @@ inline void TFT_eSPI::end_tft_write(void){
       locked = true;        // Flag to show SPI access now locked
       SPI_BUSY_CHECK;       // Check send complete and clean out unused rx data
       CS_H;
+      SET_BUS_READ_MODE;    // In case bus has been configured for tx only
 #if defined (SPI_HAS_TRANSACTION) && defined (SUPPORT_TRANSACTIONS) && !defined(TFT_PARALLEL_8_BIT) && !defined(RP2040_PIO_INTERFACE)
       spi.endTransaction();
 #endif
     }
-    SET_BUS_READ_MODE;      // In case SPI has been configured for tx only
   }
 }
 
@@ -114,11 +114,11 @@ inline void TFT_eSPI::end_nin_write(void){
       locked = true;        // Flag to show SPI access now locked
       SPI_BUSY_CHECK;       // Check send complete and clean out unused rx data
       CS_H;
+      SET_BUS_READ_MODE;    // In case SPI has been configured for tx only
 #if defined (SPI_HAS_TRANSACTION) && defined (SUPPORT_TRANSACTIONS) && !defined(TFT_PARALLEL_8_BIT) && !defined(RP2040_PIO_INTERFACE)
       spi.endTransaction();
 #endif
     }
-    SET_BUS_READ_MODE;      // In case SPI has been configured for tx only
   }
 }
 
@@ -262,7 +262,7 @@ bool TFT_eSPI::checkViewport(int32_t x, int32_t y, int32_t w, int32_t h)
 
 /***************************************************************************************
 ** Function name:           resetViewport
-** Description:             Reset viewport to whle TFT screen, datum at 0,0
+** Description:             Reset viewport to whole TFT screen, datum at 0,0
 ***************************************************************************************/
 void TFT_eSPI::resetViewport(void)
 {
@@ -442,12 +442,15 @@ TFT_eSPI::TFT_eSPI(int16_t w, int16_t h)
   resetViewport();
 
   rotation  = 0;
-  cursor_y  = cursor_x  = 0;
+  cursor_y  = cursor_x  = last_cursor_x = bg_cursor_x = 0;
   textfont  = 1;
   textsize  = 1;
   textcolor   = bitmap_fg = 0xFFFF; // White
   textbgcolor = bitmap_bg = 0x0000; // Black
-  padX = 0;             // No padding
+  padX        = 0;                  // No padding
+
+  _fillbg    = false;   // Smooth font only at the moment, force text background fill
+
   isDigits   = false;   // No bounding box adjustment
   textwrapX  = true;    // Wrap text at end of line when using print stream
   textwrapY  = false;   // Wrap text at bottom of screen when using print stream
@@ -685,7 +688,7 @@ void TFT_eSPI::init(uint8_t tc)
   tc = tc; // Suppress warning
 
   // This loads the driver specific initialisation code  <<<<<<<<<<<<<<<<<<<<< ADD NEW DRIVERS TO THE LIST HERE <<<<<<<<<<<<<<<<<<<<<<<
-#if   defined (ILI9341_DRIVER) || defined(ILI9341_2_DRIVER)
+#if   defined (ILI9341_DRIVER) || defined(ILI9341_2_DRIVER) || defined (ILI9342_DRIVER)
     #include "TFT_Drivers/ILI9341_Init.h"
 
 #elif defined (ST7735_DRIVER)
@@ -737,6 +740,9 @@ void TFT_eSPI::init(uint8_t tc)
 #elif defined (ILI9225_DRIVER)
      #include "TFT_Drivers/ILI9225_Init.h"
 
+#elif defined (RM68120_DRIVER)
+     #include "TFT_Drivers/RM68120_Init.h"
+
 #endif
 
 #ifdef TFT_INVERSION_ON
@@ -774,7 +780,7 @@ void TFT_eSPI::setRotation(uint8_t m)
   begin_tft_write();
 
     // This loads the driver specific rotation code  <<<<<<<<<<<<<<<<<<<<< ADD NEW DRIVERS TO THE LIST HERE <<<<<<<<<<<<<<<<<<<<<<<
-#if   defined (ILI9341_DRIVER) || defined(ILI9341_2_DRIVER)
+#if   defined (ILI9341_DRIVER) || defined(ILI9341_2_DRIVER) || defined (ILI9342_DRIVER)
     #include "TFT_Drivers/ILI9341_Rotation.h"
 
 #elif defined (ST7735_DRIVER)
@@ -824,6 +830,9 @@ void TFT_eSPI::setRotation(uint8_t m)
 
 #elif defined (ILI9225_DRIVER)
      #include "TFT_Drivers/ILI9225_Rotation.h"
+
+#elif defined (RM68120_DRIVER)
+     #include "TFT_Drivers/RM68120_Rotation.h"
 
 #endif
 
@@ -889,6 +898,7 @@ void TFT_eSPI::spiwrite(uint8_t c)
 ** Function name:           writecommand
 ** Description:             Send an 8 bit command to the TFT
 ***************************************************************************************/
+#ifndef RM68120_DRIVER
 void TFT_eSPI::writecommand(uint8_t c)
 {
   begin_tft_write();
@@ -902,7 +912,36 @@ void TFT_eSPI::writecommand(uint8_t c)
   end_tft_write();
 
 }
+#else
+void TFT_eSPI::writecommand(uint16_t c)
+{
+  begin_tft_write();
 
+  DC_C;
+
+  tft_Write_16(c);
+
+  DC_D;
+
+  end_tft_write();
+
+}
+void TFT_eSPI::writeRegister(uint16_t c, uint8_t d)
+{
+  begin_tft_write();
+
+  DC_C;
+
+  tft_Write_16(c);
+
+  DC_D;
+
+  tft_Write_8(d);
+
+  end_tft_write();
+
+}
+#endif
 
 /***************************************************************************************
 ** Function name:           writedata
@@ -2687,10 +2726,14 @@ void TFT_eSPI::setTextColor(uint16_t c)
 ** Function name:           setTextColor
 ** Description:             Set the font foreground and background colour
 ***************************************************************************************/
-void TFT_eSPI::setTextColor(uint16_t c, uint16_t b)
+// Smooth fonts use the background colour for anti-aliasing and by default the
+// background is not filled. If bgfill = true, then a smooth font background fill will
+// be used.
+void TFT_eSPI::setTextColor(uint16_t c, uint16_t b, bool bgfill)
 {
   textcolor   = c;
   textbgcolor = b;
+  _fillbg     = bgfill;
 }
 
 
@@ -3144,6 +3187,12 @@ void TFT_eSPI::setWindow(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
   // write to RAM
   DC_C; tft_Write_8(TFT_RAMWR);
   DC_D;
+  // Temporary solution is to include the RP2040 code here
+  #if (defined(ARDUINO_ARCH_RP2040)  || defined (ARDUINO_ARCH_MBED)) && !defined(RP2040_PIO_INTERFACE)
+    // For ILI9225 and RP2040 the slower Arduino SPI transfer calls were used, so need to swap back to 16 bit mode
+    while (spi_get_hw(SPI_X)->sr & SPI_SSPSR_BSY_BITS) {};
+    hw_write_masked(&spi_get_hw(SPI_X)->cr0, (16 - 1) << SPI_SSPCR0_DSS_LSB, SPI_SSPCR0_DSS_BITS);
+  #endif
 #elif defined (SSD1351_DRIVER)
   if (rotation & 1) {
     swap_coord(x0, y0);
@@ -3448,7 +3497,11 @@ void TFT_eSPI::drawPixel(int32_t x, int32_t y, uint32_t color)
     TX_FIFO = (y<<16) | y;
     TX_FIFO = TFT_RAMWR;
     //DC set high by PIO
-    TX_FIFO = color;
+    #if  defined (SPI_18BIT_DRIVER)
+      TX_FIFO = ((color & 0xF800)<<8) | ((color & 0x07E0)<<5) | ((color & 0x001F)<<3);
+    #else
+      TX_FIFO = color;
+    #endif
 
   #endif
 
@@ -3690,7 +3743,7 @@ uint16_t TFT_eSPI::drawPixel(int32_t x, int32_t y, uint32_t color, uint8_t alpha
 void TFT_eSPI::fillSmoothCircle(int32_t x, int32_t y, int32_t r, uint32_t color, uint32_t bg_color)
 {
   if (r <= 0) return;
-  
+
   inTransaction = true;
 
   drawFastHLine(x - r, y, 2 * r + 1, color);
@@ -3746,9 +3799,14 @@ void TFT_eSPI::fillSmoothRoundRect(int32_t x, int32_t y, int32_t w, int32_t h, i
   int32_t xs = 0;
   int32_t cx = 0;
 
+  // Limit radius to half width or height
+  if (r > w/2) r = w/2;
+  if (r > h/2) r = h/2;
+
   y += r;
   h -= 2*r;
-  fillRect(x, y, w, h + 1, color);
+  fillRect(x, y, w, h, color);
+  h--;
   x += r;
   w -= 2*r+1;
   int32_t r1 = r * r;
@@ -4949,23 +5007,17 @@ int16_t TFT_eSPI::drawString(const char *string, int32_t poX, int32_t poY, uint8
 
 #ifdef SMOOTH_FONT
   if(fontLoaded) {
-    if (textcolor!=textbgcolor) fillRect(poX, poY, cwidth, cheight, textbgcolor);
-/*
-    // The above only works for a single text line, not if the text is going to wrap...
-    // So need to use code like this in a while loop to fix it:
-    if (textwrapX && (cursor_x + width * textsize > width())) {
-      cursor_y += height;
-      cursor_x = 0;
-    }
-    if (textwrapY && (cursor_y >= (int32_t)height())) cursor_y = 0;
-    cursor_x += drawChar(uniCode, cursor_x, cursor_y, textfont);
-*/
     setCursor(poX, poY);
+
+    bool fillbg = _fillbg;
+    // If padding is requested then fill the text background
+    if (padX && !_fillbg) _fillbg = true;
 
     while (n < len) {
       uint16_t uniCode = decodeUTF8((uint8_t*)string, &n, len - n);
       drawGlyph(uniCode);
     }
+    _fillbg = fillbg; // restore state
     sumX += cwidth;
     //fontFile.close();
   }
@@ -5272,6 +5324,21 @@ SPIClass& TFT_eSPI::getSPIinstance(void)
 }
 #endif
 
+
+/***************************************************************************************
+** Function name:           verifySetupID
+** Description:             Compare the ID if USER_SETUP_ID defined in user setup file
+***************************************************************************************/
+bool TFT_eSPI::verifySetupID(uint32_t id)
+{
+#if defined (USER_SETUP_ID)
+  if (USER_SETUP_ID == id) return true;
+#else
+  id = id; // Avoid warning
+#endif
+  return false;
+}
+
 /***************************************************************************************
 ** Function name:           getSetup
 ** Description:             Get the setup details for diagnostic and sketch access
@@ -5279,6 +5346,18 @@ SPIClass& TFT_eSPI::getSPIinstance(void)
 void TFT_eSPI::getSetup(setup_t &tft_settings)
 {
 // tft_settings.version is set in header file
+
+#if defined (USER_SETUP_INFO)
+  tft_settings.setup_info = USER_SETUP_INFO;
+#else
+  tft_settings.setup_info = "NA";
+#endif
+
+#if defined (USER_SETUP_ID)
+  tft_settings.setup_id = USER_SETUP_ID;
+#else
+  tft_settings.setup_id = 0;
+#endif
 
 #if defined (PROCESSOR_ID)
   tft_settings.esp = PROCESSOR_ID;
@@ -5300,6 +5379,16 @@ void TFT_eSPI::getSetup(setup_t &tft_settings)
   tft_settings.tft_spi_freq = SPI_FREQUENCY/100000;
   #ifdef SPI_READ_FREQUENCY
     tft_settings.tft_rd_freq = SPI_READ_FREQUENCY/100000;
+  #endif
+  #ifdef TFT_SPI_PORT
+    tft_settings.port = TFT_SPI_PORT;
+  #else
+    tft_settings.port = 255;
+  #endif
+  #ifdef RP2040_PIO_SPI
+    tft_settings.interface = 0x10;
+  #else
+    tft_settings.interface = 0x0;
   #endif
 #endif
 
@@ -5422,8 +5511,9 @@ void TFT_eSPI::getSetup(setup_t &tft_settings)
 ////////////////////////////////////////////////////////////////////////////////////////
 #ifdef TOUCH_CS
   #include "Extensions/Touch.cpp"
-  #include "Extensions/Button.cpp"
 #endif
+
+#include "Extensions/Button.cpp"
 
 #include "Extensions/Sprite.cpp"
 

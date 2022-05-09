@@ -1,6 +1,22 @@
 ArduinoJson: change log
 =======================
 
+v6.19.4 (2022-04-05)
+-------
+
+* Add `ElementProxy::memoryUsage()`
+* Add `MemberProxy::memoryUsage()` (issue #1730)
+* Add implicit conversion from `JsonDocument` to `JsonVariant`
+* Fix comparisons operators with `const JsonDocument&`
+
+v6.19.3 (2022-03-08)
+-------
+
+* Fix `call of overloaded 'String(const char*, int)' is ambiguous`
+* Fix `JsonString` operator `==` and `!=` for non-zero-terminated string
+* Fix `-Wsign-conversion` on GCC 8 (issue #1715)
+* MessagePack: serialize round floats as integers (issue #1718)
+
 v6.19.2 (2022-02-14)
 -------
 

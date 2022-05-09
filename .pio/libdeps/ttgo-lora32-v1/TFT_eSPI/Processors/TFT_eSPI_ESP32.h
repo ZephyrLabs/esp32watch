@@ -12,7 +12,7 @@
 #include "soc/spi_reg.h"
 #include "driver/spi_master.h"
 
-#if !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C2) && !defined(CONFIG_IDF_TARGET_ESP32)
+#if !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32)
   #define CONFIG_IDF_TARGET_ESP32
 #endif
 
@@ -317,6 +317,13 @@ SPI3_HOST = 2
       #define TFT_SCLK 18
     #endif
 
+    #if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32S2)
+      #if (TFT_MISO == -1)
+        #undef TFT_MISO
+        #define TFT_MISO TFT_MOSI
+      #endif
+    #endif
+
   #endif
 
 #endif
@@ -478,7 +485,7 @@ SPI3_HOST = 2
   // Write 8 bits
   #define tft_Write_8(C) TFT_WRITE_BITS((C)<<8, 16)
 
-  // Write 16 bits with corrected endianess for 16 bit colours
+  // Write 16 bits with corrected endianness for 16 bit colours
   #define tft_Write_16(C) TFT_WRITE_BITS((C)<<8 | (C)>>8, 16)
 
   // Future option for transfer without wait
@@ -513,7 +520,7 @@ SPI3_HOST = 2
   // Write 8 bits
   #define tft_Write_8(C) TFT_WRITE_BITS(C, 8)
 
-  // Write 16 bits with corrected endianess for 16 bit colours
+  // Write 16 bits with corrected endianness for 16 bit colours
   #define tft_Write_16(C) TFT_WRITE_BITS((C)<<8 | (C)>>8, 16)
 
   // Write 16 bits
@@ -537,7 +544,7 @@ SPI3_HOST = 2
   // Write 8 bits
   #define tft_Write_8(C) TFT_WRITE_BITS(C, 8)
 
-  // Write 16 bits with corrected endianess for 16 bit colours
+  // Write 16 bits with corrected endianness for 16 bit colours
   #define tft_Write_16(C) TFT_WRITE_BITS((C)<<8 | (C)>>8, 16)
 
   // Future option for transfer without wait
